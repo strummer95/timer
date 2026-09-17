@@ -53,7 +53,7 @@ h1{
   letter-spacing:.01em;
   margin:0 0 10px;
 }
-h1 span{color:var(--fg-dim);font-weight:500}
+h1 span{color:var(--fg-dim);font-weight:500;padding-left:.5em;border-left:2px solid var(--line);margin-left:.45em}
 button{font:inherit;color:inherit;cursor:pointer}
 :focus-visible{outline:2px solid var(--done);outline-offset:2px}
 
@@ -161,7 +161,7 @@ ol.laps li.best .n::after{content:" · best";color:var(--live)}
 </head>
 <body>
 
-<h1>Time trial timer <span>&mdash; leave the frame, come back, done</span></h1>
+<h1>Time trial timer <span>leave the frame, come back, done</span></h1>
 
 <div class="stage" id="stage" data-state="idle" data-present="0">
   <video id="video" playsinline autoplay muted></video>
@@ -191,7 +191,7 @@ ol.laps li.best .n::after{content:" · best";color:var(--live)}
   </div>
   <div class="field">
     <label for="delay">Time to clear the frame
-      <span class="hint">Countdown before it memorises the empty scene.</span>
+      <span class="hint">Countdown before it memorizes the empty scene.</span>
     </label>
     <select id="delay">
       <option value="5">5 sec</option>
@@ -445,7 +445,7 @@ function tick(now){
       finishCapture();
       setState('waitin');
       cueText('Step into the frame','Stand where you will start');
-      statusEl.textContent='Scene memorised. Walk in and hold still for a second.';
+      statusEl.textContent='Scene memorized. Walk in and hold still for a second.';
     }
     return;
   }

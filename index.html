@@ -1,0 +1,589 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Time Trial Timer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0e1116;
+  --panel:#171c25;
+  --panel-2:#1f2631;
+  --line:#2c3543;
+  --fg:#eef2f8;
+  --fg-dim:#9aa7b8;
+  --idle:#6d7a8c;
+  --armed:#f2b544;
+  --live:#39d98a;
+  --done:#57a9ff;
+  --warn:#ff6b5e;
+  --radius:14px;
+}
+@media (prefers-color-scheme: light){
+  :root:not([data-theme="dark"]){
+    --bg:#0e1116; --panel:#171c25; --panel-2:#1f2631; --line:#2c3543;
+    --fg:#eef2f8; --fg-dim:#9aa7b8;
+  }
+}
+:root[data-theme="light"]{
+  --bg:#0e1116; --panel:#171c25; --panel-2:#1f2631; --line:#2c3543;
+  --fg:#eef2f8; --fg-dim:#9aa7b8;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  background:var(--bg);
+  color:var(--fg);
+  font-family:"Barlow",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  font-size:16px;
+  line-height:1.45;
+  -webkit-font-smoothing:antialiased;
+  padding:14px 14px calc(28px + env(safe-area-inset-bottom));
+  max-width:560px;
+  margin:0 auto;
+  overscroll-behavior:none;
+}
+h1{
+  font-family:"Barlow Condensed",system-ui,sans-serif;
+  font-weight:700;
+  font-size:1.35rem;
+  letter-spacing:.01em;
+  margin:0 0 10px;
+}
+h1 span{color:var(--fg-dim);font-weight:500}
+button{font:inherit;color:inherit;cursor:pointer}
+:focus-visible{outline:2px solid var(--done);outline-offset:2px}
+
+/* camera */
+.stage{
+  position:relative;
+  border-radius:var(--radius);
+  overflow:hidden;
+  background:#000;
+  border:2px solid var(--line);
+  aspect-ratio:4/3;
+  max-height:38vh;
+  transition:border-color .18s ease;
+}
+.stage[data-state="ready"]{border-color:var(--armed)}
+.stage[data-state="running"]{border-color:var(--live)}
+.stage[data-state="done"]{border-color:var(--done)}
+video{width:100%;height:100%;object-fit:cover;display:block;background:#000}
+video.mirror{transform:scaleX(-1)}
+.cue{
+  position:absolute;inset:0;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:4px;text-align:center;padding:16px;
+  background:linear-gradient(180deg,rgba(6,8,12,.55),rgba(6,8,12,.2) 40%,rgba(6,8,12,.75));
+  font-family:"Barlow Condensed",system-ui,sans-serif;
+  font-size:1.5rem;font-weight:600;line-height:1.15;
+  text-shadow:0 2px 12px rgba(0,0,0,.8);
+}
+.cue small{font-family:"Barlow",sans-serif;font-size:.85rem;font-weight:400;color:#d6dde7}
+.cue.hide{display:none}
+.count{font-size:4.5rem;line-height:1;font-weight:700;font-variant-numeric:tabular-nums}
+.meter{
+  position:absolute;left:10px;right:10px;bottom:10px;height:7px;
+  border-radius:99px;background:rgba(255,255,255,.18);overflow:hidden;
+}
+.meter i{display:block;height:100%;width:0%;background:var(--fg-dim);transition:width .06s linear,background .2s}
+.meter b{position:absolute;top:-3px;width:2px;height:13px;background:var(--warn);left:0}
+.stage[data-present="1"] .meter i{background:var(--live)}
+
+/* timer */
+.readout{
+  font-family:"Barlow Condensed",system-ui,sans-serif;
+  font-variant-numeric:tabular-nums;
+  font-weight:600;
+  font-size:clamp(4.2rem,22vw,7.5rem);
+  line-height:.92;
+  letter-spacing:-.01em;
+  text-align:center;
+  margin:14px 0 2px;
+  color:var(--idle);
+  transition:color .2s ease;
+}
+.readout[data-state="ready"]{color:var(--armed)}
+.readout[data-state="running"]{color:var(--live)}
+.readout[data-state="done"]{color:var(--done)}
+.readout .ms{font-size:.5em;color:var(--fg-dim)}
+.status{text-align:center;color:var(--fg-dim);min-height:1.4em;margin:0 0 14px;font-size:.95rem}
+
+/* controls */
+.row{display:flex;gap:10px}
+.btn{
+  flex:1;border:0;border-radius:12px;padding:15px 12px;
+  background:var(--panel-2);border:1px solid var(--line);
+  font-family:"Barlow Condensed",system-ui,sans-serif;
+  font-size:1.25rem;font-weight:600;
+}
+.btn.primary{background:var(--armed);color:#191307;border-color:transparent}
+.btn.stop{background:var(--warn);color:#1a0806;border-color:transparent}
+.btn:active{transform:translateY(1px)}
+.btn[hidden]{display:none}
+
+.panel{
+  margin-top:14px;background:var(--panel);border:1px solid var(--line);
+  border-radius:var(--radius);padding:12px 14px;
+}
+.panel h2{
+  font-family:"Barlow Condensed",system-ui,sans-serif;
+  font-size:1.05rem;margin:0 0 8px;font-weight:600;
+}
+.field{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:7px 0}
+.field + .field{border-top:1px solid var(--line)}
+.field label{font-size:.95rem}
+.field .hint{display:block;color:var(--fg-dim);font-size:.8rem;line-height:1.3}
+input[type=range]{width:130px;accent-color:var(--armed)}
+input[type=checkbox]{width:20px;height:20px;accent-color:var(--armed)}
+select{background:var(--panel-2);color:var(--fg);border:1px solid var(--line);border-radius:8px;padding:6px 8px}
+.mini{background:var(--panel-2);border:1px solid var(--line);border-radius:9px;padding:7px 11px;font-size:.9rem}
+
+ol.laps{list-style:none;margin:0;padding:0}
+ol.laps li{
+  display:flex;justify-content:space-between;align-items:baseline;
+  padding:7px 0;border-top:1px solid var(--line);
+  font-variant-numeric:tabular-nums;
+}
+ol.laps li:first-child{border-top:0}
+ol.laps .n{color:var(--fg-dim);font-size:.85rem}
+ol.laps .t{font-family:"Barlow Condensed",sans-serif;font-size:1.3rem;font-weight:600}
+ol.laps li.best .t{color:var(--live)}
+ol.laps li.best .n::after{content:" · best";color:var(--live)}
+.empty{color:var(--fg-dim);font-size:.9rem;margin:0}
+.err{color:var(--warn);font-size:.9rem}
+.foot{color:var(--fg-dim);font-size:.82rem;margin:16px 2px 0;line-height:1.5}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+
+<h1>Time trial timer <span>&mdash; leave the frame, come back, done</span></h1>
+
+<div class="stage" id="stage" data-state="idle" data-present="0">
+  <video id="video" playsinline autoplay muted></video>
+  <div class="cue" id="cue">
+    <div>Tap start to turn on the camera</div>
+    <small>Prop the phone so it can see your start spot</small>
+  </div>
+  <div class="meter"><i id="bar"></i><b id="mark"></b></div>
+</div>
+
+<div class="readout" id="readout" data-state="idle">0.<span class="ms">00</span></div>
+<p class="status" id="status">Front camera, so you can see the screen from the start line.</p>
+
+<div class="row">
+  <button class="btn primary" id="main">Start camera</button>
+  <button class="btn stop" id="halt" hidden>Stop now</button>
+  <button class="btn" id="redo" hidden>Reset</button>
+</div>
+
+<div class="panel">
+  <h2>Setup</h2>
+  <div class="field">
+    <label for="sens">Sensitivity
+      <span class="hint">Higher catches you sooner. Lower ignores wind and shadows.</span>
+    </label>
+    <input type="range" id="sens" min="1" max="10" step="1" value="6">
+  </div>
+  <div class="field">
+    <label for="delay">Time to clear the frame
+      <span class="hint">Countdown before it memorises the empty scene.</span>
+    </label>
+    <select id="delay">
+      <option value="5">5 sec</option>
+      <option value="8" selected>8 sec</option>
+      <option value="12">12 sec</option>
+      <option value="20">20 sec</option>
+    </select>
+  </div>
+  <div class="field">
+    <label for="loop">Auto re-arm for the next rep</label>
+    <input type="checkbox" id="loop" checked>
+  </div>
+  <div class="field">
+    <label for="beep">Beep on start and stop</label>
+    <input type="checkbox" id="beep" checked>
+  </div>
+  <div class="field">
+    <label for="flip">Camera</label>
+    <button class="mini" id="flip">Front</button>
+  </div>
+</div>
+
+<div class="panel">
+  <h2>Reps</h2>
+  <ol class="laps" id="laps"></ol>
+  <p class="empty" id="lapsEmpty">Your times land here, and stay on this phone.</p>
+  <div class="row" style="margin-top:10px">
+    <button class="mini" id="clear" style="flex:1">Clear reps</button>
+  </div>
+</div>
+
+<p class="foot" id="foot">
+  Open this link straight in your phone browser if the camera will not turn on.
+  The timer starts the instant you clear the frame and stops the instant you are back in it.
+</p>
+
+<script>
+(function(){
+"use strict";
+
+var W=96,H=72,N=W*H;
+var video=document.getElementById('video');
+var stage=document.getElementById('stage');
+var cue=document.getElementById('cue');
+var readout=document.getElementById('readout');
+var statusEl=document.getElementById('status');
+var mainBtn=document.getElementById('main');
+var haltBtn=document.getElementById('halt');
+var redoBtn=document.getElementById('redo');
+var bar=document.getElementById('bar');
+var mark=document.getElementById('mark');
+var lapsEl=document.getElementById('laps');
+var lapsEmpty=document.getElementById('lapsEmpty');
+var sensEl=document.getElementById('sens');
+var delayEl=document.getElementById('delay');
+var loopEl=document.getElementById('loop');
+var beepEl=document.getElementById('beep');
+var flipBtn=document.getElementById('flip');
+var clearBtn=document.getElementById('clear');
+
+var canvas=document.createElement('canvas');
+canvas.width=W;canvas.height=H;
+var ctx=canvas.getContext('2d',{willReadFrequently:true});
+
+var cur=new Uint8Array(N);
+var bg=null;
+var acc=null, accCount=0, accumulating=false;
+
+var PIXEL_DIFF=26;
+var DEBOUNCE=3;
+var MIN_AWAY=700;
+var MIN_RUN=900;
+var SETTLE=900;
+
+var state='idle';
+var stream=null, raf=null, facing='user';
+var isPresent=null, pend=null, changedAt=0;
+var startT=0, endT=0, countEnd=0, doneAt=0, enteredAt=0;
+var audioCtx=null;
+var laps=[];
+
+var SKEY='timetrial:settings:v1', LKEY='timetrial:laps:v1';
+
+function load(){
+  try{
+    var s=JSON.parse(localStorage.getItem(SKEY)||'{}');
+    if(s.sens) sensEl.value=s.sens;
+    if(s.delay) delayEl.value=s.delay;
+    if(typeof s.loop==='boolean') loopEl.checked=s.loop;
+    if(typeof s.beep==='boolean') beepEl.checked=s.beep;
+    if(s.facing) facing=s.facing;
+  }catch(e){}
+  try{
+    var l=JSON.parse(localStorage.getItem(LKEY)||'[]');
+    if(Array.isArray(l)) laps=l.slice(0,50);
+  }catch(e){}
+  flipBtn.textContent = facing==='user' ? 'Front' : 'Rear';
+  renderLaps();
+}
+function save(){
+  try{
+    localStorage.setItem(SKEY,JSON.stringify({
+      sens:sensEl.value,delay:delayEl.value,
+      loop:loopEl.checked,beep:beepEl.checked,facing:facing
+    }));
+  }catch(e){}
+}
+function saveLaps(){ try{ localStorage.setItem(LKEY,JSON.stringify(laps.slice(0,50))); }catch(e){} }
+
+function threshold(){
+  var s=parseInt(sensEl.value,10);
+  return 0.22 - (s-1)*(0.19/9);
+}
+
+function fmt(ms){
+  if(ms<0) ms=0;
+  var t=Math.floor(ms/10);
+  var cs=t%100, secs=Math.floor(t/100), m=Math.floor(secs/60);
+  secs=secs%60;
+  var head = m>0 ? m+':'+(secs<10?'0':'')+secs : String(secs);
+  return head+'.<span class="ms">'+(cs<10?'0':'')+cs+'</span>';
+}
+function show(ms){ readout.innerHTML=fmt(ms); }
+
+function setState(s){
+  state=s;
+  stage.dataset.state=s;
+  readout.dataset.state=s;
+}
+
+function cueText(big,small){
+  if(big===null){ cue.classList.add('hide'); return; }
+  cue.classList.remove('hide');
+  cue.innerHTML = '<div>'+big+'</div>' + (small?'<small>'+small+'</small>':'');
+}
+
+function tone(freq,dur,vol){
+  if(!beepEl.checked) return;
+  try{
+    if(!audioCtx) audioCtx=new (window.AudioContext||window.webkitAudioContext)();
+    if(audioCtx.state==='suspended') audioCtx.resume();
+    var o=audioCtx.createOscillator(), g=audioCtx.createGain();
+    o.type='square'; o.frequency.value=freq;
+    g.gain.setValueAtTime(vol||0.25,audioCtx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001,audioCtx.currentTime+dur);
+    o.connect(g); g.connect(audioCtx.destination);
+    o.start(); o.stop(audioCtx.currentTime+dur+0.02);
+  }catch(e){}
+}
+function beepGo(){ tone(1180,0.18,0.3); }
+function beepStop(){ tone(760,0.12,0.3); setTimeout(function(){tone(520,0.24,0.3);},150); }
+function beepTick(){ tone(880,0.07,0.16); }
+function beepArm(){ tone(660,0.09,0.2); setTimeout(function(){tone(990,0.14,0.2);},110); }
+
+var wakeLock=null;
+function keepAwake(){
+  if(!('wakeLock' in navigator)) return;
+  navigator.wakeLock.request('screen').then(function(l){
+    wakeLock=l;
+    l.addEventListener('release',function(){wakeLock=null;});
+  }).catch(function(){});
+}
+document.addEventListener('visibilitychange',function(){
+  if(document.visibilityState==='visible' && stream && !wakeLock) keepAwake();
+});
+
+function startCamera(){
+  var want={video:{facingMode:facing,width:{ideal:640},height:{ideal:480}},audio:false};
+  return navigator.mediaDevices.getUserMedia(want).then(function(s){
+    if(stream) stream.getTracks().forEach(function(t){t.stop();});
+    stream=s;
+    video.srcObject=s;
+    video.classList.toggle('mirror',facing==='user');
+    return video.play().catch(function(){});
+  });
+}
+
+function sample(){
+  ctx.drawImage(video,0,0,W,H);
+  var d=ctx.getImageData(0,0,W,H).data;
+  var count=0,p=0;
+  for(var i=0;i<d.length;i+=4,p++){
+    var g=(d[i]*77+d[i+1]*150+d[i+2]*29)>>8;
+    cur[p]=g;
+    if(bg && Math.abs(g-bg[p])>PIXEL_DIFF) count++;
+  }
+  if(accumulating){
+    for(var k=0;k<N;k++) acc[k]+=cur[k];
+    accCount++;
+  }
+  return bg? count/N : 0;
+}
+
+function adaptBg(rate){
+  if(!bg) return;
+  for(var k=0;k<N;k++) bg[k]+=(cur[k]-bg[k])*rate;
+}
+
+function beginCapture(){
+  acc=new Float32Array(N); accCount=0; accumulating=true;
+}
+function finishCapture(){
+  accumulating=false;
+  if(!accCount){ bg=Float32Array.from(cur); return; }
+  bg=new Float32Array(N);
+  for(var k=0;k<N;k++) bg[k]=acc[k]/accCount;
+  isPresent=false; pend=null; changedAt=performance.now();
+}
+
+function classify(score,now){
+  if(!bg) return;
+  var t=threshold();
+  var raw = isPresent ? (score > t*0.55) : (score > t);
+  if(isPresent===null){ isPresent=raw; changedAt=now; return; }
+  if(raw===isPresent){ pend=null; return; }
+  if(!pend || pend.v!==raw) pend={v:raw,since:now,n:1};
+  else pend.n++;
+  if(pend.n>=DEBOUNCE){
+    isPresent=raw; changedAt=pend.since; pend=null;
+  }
+}
+
+function loop(){
+  raf=requestAnimationFrame(loop);
+  var now=performance.now();
+
+  if(video.readyState>=2 && video.videoWidth){
+    var score=sample();
+    classify(score,now);
+    var t=threshold();
+    var pct=Math.min(100,(score/Math.max(t*2,0.02))*100);
+    bar.style.width=pct.toFixed(1)+'%';
+    mark.style.left='calc('+Math.min(100,(t/Math.max(t*2,0.02))*100).toFixed(1)+'% - 1px)';
+    stage.dataset.present = isPresent ? '1':'0';
+    tick(now);
+  }
+
+  if(state==='running') show(now-startT);
+}
+
+var lastTick=-1;
+function tick(now){
+  if(state==='countdown'){
+    var left=Math.max(0,countEnd-now);
+    var s=Math.ceil(left/1000);
+    if(s!==lastTick){ lastTick=s; if(s>0) beepTick(); }
+    cue.classList.remove('hide');
+    cue.innerHTML='<div class="count">'+s+'</div><small>Step out of the frame</small>';
+    if(left<=900 && !accumulating) beginCapture();
+    if(left<=0){
+      finishCapture();
+      setState('waitin');
+      cueText('Step into the frame','Stand where you will start');
+      statusEl.textContent='Scene memorised. Walk in and hold still for a second.';
+    }
+    return;
+  }
+
+  if(state==='waitin'){
+    adaptBg(isPresent?0:0.02);
+    if(isPresent && now-changedAt>SETTLE){
+      setState('ready');
+      enteredAt=now;
+      beepArm();
+      cueText('Go when you are ready','Timer starts as you leave the frame');
+      statusEl.textContent='Armed. Run.';
+      show(0);
+      mainBtn.hidden=true; redoBtn.hidden=false; haltBtn.hidden=true;
+      redoBtn.textContent='Recalibrate';
+    }
+    return;
+  }
+
+  if(state==='ready'){
+    if(isPresent) adaptBg(0);
+    if(!isPresent){
+      startT=changedAt;
+      setState('running');
+      beepGo();
+      cueText(null);
+      statusEl.textContent='Running. Come back into frame to stop.';
+      mainBtn.hidden=true; redoBtn.hidden=true; haltBtn.hidden=false;
+    }
+    return;
+  }
+
+  if(state==='running'){
+    if(!isPresent) adaptBg(0.015);
+    var el=now-startT;
+    if(isPresent && el>MIN_RUN && now-changedAt>0){
+      finish(changedAt);
+    }
+    return;
+  }
+
+  if(state==='done'){
+    if(loopEl.checked && now-doneAt>2600){
+      setState('waitin');
+      changedAt=now;
+      cueText('Reset for the next rep','Stand on your start spot');
+      statusEl.textContent='Re-arming.';
+      haltBtn.hidden=true; redoBtn.hidden=false; mainBtn.hidden=true;
+    }
+    return;
+  }
+}
+
+function finish(stopTime){
+  endT=stopTime;
+  var ms=endT-startT;
+  setState('done');
+  show(ms);
+  beepStop();
+  doneAt=performance.now();
+  laps.unshift({ms:Math.round(ms),at:Date.now()});
+  laps=laps.slice(0,50);
+  saveLaps(); renderLaps();
+  var best=Math.min.apply(null,laps.map(function(l){return l.ms;}));
+  statusEl.textContent = (Math.round(ms)===best && laps.length>1) ? 'Best rep so far.' : 'Rep logged.';
+  cueText('Stopped', loopEl.checked ? 'Re-arming in a moment' : 'Tap reset for another');
+  haltBtn.hidden=true; redoBtn.hidden=false; mainBtn.hidden=true;
+  redoBtn.textContent = loopEl.checked ? 'Recalibrate' : 'Go again';
+}
+
+function renderLaps(){
+  lapsEl.innerHTML='';
+  if(!laps.length){ lapsEmpty.hidden=false; return; }
+  lapsEmpty.hidden=true;
+  var best=Math.min.apply(null,laps.map(function(l){return l.ms;}));
+  laps.forEach(function(l,i){
+    var li=document.createElement('li');
+    if(l.ms===best) li.className='best';
+    var n=document.createElement('span'); n.className='n';
+    n.textContent='Rep '+(laps.length-i);
+    var t=document.createElement('span'); t.className='t';
+    t.innerHTML=fmt(l.ms);
+    li.appendChild(n); li.appendChild(t);
+    lapsEl.appendChild(li);
+  });
+}
+
+function calibrate(){
+  bg=null; isPresent=null; pend=null; lastTick=-1; accumulating=false;
+  setState('countdown');
+  countEnd=performance.now()+parseInt(delayEl.value,10)*1000;
+  show(0);
+  statusEl.textContent='Clear the frame so it can learn the empty scene.';
+  mainBtn.hidden=true; redoBtn.hidden=false; haltBtn.hidden=true;
+  redoBtn.textContent='Cancel';
+}
+
+mainBtn.addEventListener('click',function(){
+  tone(880,0.05,0.12);
+  mainBtn.disabled=true;
+  mainBtn.textContent='Starting camera';
+  startCamera().then(function(){
+    mainBtn.disabled=false;
+    keepAwake();
+    if(!raf) loop();
+    calibrate();
+  }).catch(function(err){
+    mainBtn.disabled=false;
+    mainBtn.textContent='Start camera';
+    cueText('Camera blocked','Allow camera access, or open this page directly in your browser');
+    statusEl.innerHTML='<span class="err">No camera: '+(err && err.name ? err.name : 'unavailable')+'</span>';
+  });
+});
+
+redoBtn.addEventListener('click',function(){ calibrate(); });
+
+haltBtn.addEventListener('click',function(){
+  if(state==='running') finish(performance.now());
+});
+
+flipBtn.addEventListener('click',function(){
+  facing = facing==='user' ? 'environment' : 'user';
+  flipBtn.textContent = facing==='user' ? 'Front' : 'Rear';
+  save();
+  if(stream){ startCamera().then(function(){ calibrate(); }).catch(function(){}); }
+});
+
+clearBtn.addEventListener('click',function(){
+  laps=[]; saveLaps(); renderLaps();
+});
+
+[sensEl,delayEl,loopEl,beepEl].forEach(function(el){
+  el.addEventListener('change',save);
+});
+
+load();
+show(0);
+})();
+</script>
+</body>
+</html>

@@ -1,250 +1,3 @@
-<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>Time Trial Timer</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet">
-<style>
-:root{
-  --bg:#0e1116;
-  --panel:#171c25;
-  --panel-2:#1f2631;
-  --line:#2c3543;
-  --fg:#eef2f8;
-  --fg-dim:#9aa7b8;
-  --idle:#6d7a8c;
-  --armed:#f2b544;
-  --live:#39d98a;
-  --done:#57a9ff;
-  --warn:#ff6b5e;
-  --radius:14px;
-}
-*{box-sizing:border-box}
-html,body{margin:0;padding:0}
-body{
-  background:var(--bg);
-  color:var(--fg);
-  font-family:"Barlow",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
-  font-size:16px;
-  line-height:1.45;
-  -webkit-font-smoothing:antialiased;
-  padding:14px 14px calc(28px + env(safe-area-inset-bottom));
-  max-width:560px;
-  margin:0 auto;
-  overscroll-behavior:none;
-}
-h1{
-  font-family:"Barlow Condensed",system-ui,sans-serif;
-  font-weight:700;
-  font-size:1.35rem;
-  letter-spacing:.01em;
-  margin:0 0 10px;
-}
-h1 span{color:var(--fg-dim);font-weight:500;padding-left:.5em;border-left:2px solid var(--line);margin-left:.45em}
-button{font:inherit;color:inherit;cursor:pointer}
-:focus-visible{outline:2px solid var(--done);outline-offset:2px}
-
-.stage{
-  position:relative;
-  border-radius:var(--radius);
-  overflow:hidden;
-  background:#000;
-  border:2px solid var(--line);
-  aspect-ratio:4/3;
-  max-height:38vh;
-  transition:border-color .18s ease;
-}
-.stage[data-state="ready"]{border-color:var(--armed)}
-.stage[data-state="running"]{border-color:var(--live)}
-.stage[data-state="done"]{border-color:var(--done)}
-video{width:100%;height:100%;object-fit:cover;display:block;background:#000}
-video.mirror{transform:scaleX(-1)}
-.cue{
-  position:absolute;inset:0;
-  display:flex;flex-direction:column;align-items:center;justify-content:center;
-  gap:4px;text-align:center;padding:16px;
-  background:linear-gradient(180deg,rgba(6,8,12,.55),rgba(6,8,12,.2) 40%,rgba(6,8,12,.75));
-  font-family:"Barlow Condensed",system-ui,sans-serif;
-  font-size:1.5rem;font-weight:600;line-height:1.15;
-  text-shadow:0 2px 12px rgba(0,0,0,.8);
-}
-.cue small{font-family:"Barlow",sans-serif;font-size:.85rem;font-weight:400;color:#d6dde7}
-.cue.hide{display:none}
-.count{font-size:4.5rem;line-height:1;font-weight:700;font-variant-numeric:tabular-nums}
-.meter{
-  position:absolute;left:10px;right:10px;bottom:10px;height:7px;
-  border-radius:99px;background:rgba(255,255,255,.18);overflow:hidden;
-}
-.meter i{display:block;height:100%;width:0%;background:var(--fg-dim);transition:width .06s linear,background .2s}
-.meter b{position:absolute;top:-3px;width:2px;height:13px;background:var(--warn);left:0}
-.stage[data-present="1"] .meter i{background:var(--live)}
-
-.readout{
-  font-family:"Barlow Condensed",system-ui,sans-serif;
-  font-variant-numeric:tabular-nums;
-  font-weight:600;
-  font-size:clamp(4.2rem,22vw,7.5rem);
-  line-height:.92;
-  letter-spacing:-.01em;
-  text-align:center;
-  margin:14px 0 2px;
-  color:var(--idle);
-  transition:color .2s ease;
-}
-.readout[data-state="ready"]{color:var(--armed)}
-.readout[data-state="running"]{color:var(--live)}
-.readout[data-state="done"]{color:var(--done)}
-.readout .ms{font-size:.5em;color:var(--fg-dim)}
-.status{text-align:center;color:var(--fg-dim);min-height:1.4em;margin:0 0 14px;font-size:.95rem}
-
-.row{display:flex;gap:10px}
-.btn{
-  flex:1;border-radius:12px;padding:15px 12px;
-  background:var(--panel-2);border:1px solid var(--line);
-  font-family:"Barlow Condensed",system-ui,sans-serif;
-  font-size:1.25rem;font-weight:600;
-}
-.btn.primary{background:var(--armed);color:#191307;border-color:transparent}
-.btn.stop{background:var(--warn);color:#1a0806;border-color:transparent}
-.btn:active{transform:translateY(1px)}
-.btn[hidden]{display:none}
-
-.panel{
-  margin-top:14px;background:var(--panel);border:1px solid var(--line);
-  border-radius:var(--radius);padding:12px 14px;
-}
-.panel h2{
-  font-family:"Barlow Condensed",system-ui,sans-serif;
-  font-size:1.05rem;margin:0 0 8px;font-weight:600;
-}
-.field{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:7px 0}
-.field + .field{border-top:1px solid var(--line)}
-.field label{font-size:.95rem}
-.field .hint{display:block;color:var(--fg-dim);font-size:.8rem;line-height:1.3}
-input[type=range]{width:130px;accent-color:var(--armed)}
-input[type=checkbox]{width:20px;height:20px;accent-color:var(--armed)}
-select{background:var(--panel-2);color:var(--fg);border:1px solid var(--line);border-radius:8px;padding:6px 8px}
-.mini{background:var(--panel-2);border:1px solid var(--line);border-radius:9px;padding:7px 11px;font-size:.9rem}
-.mini:disabled{opacity:.6}
-
-ol.laps{list-style:none;margin:0;padding:0}
-ol.laps li{
-  display:flex;justify-content:space-between;align-items:baseline;
-  padding:7px 0;border-top:1px solid var(--line);
-  font-variant-numeric:tabular-nums;
-}
-ol.laps li:first-child{border-top:0}
-ol.laps .n{color:var(--fg-dim);font-size:.85rem}
-ol.laps .t{font-family:"Barlow Condensed",sans-serif;font-size:1.3rem;font-weight:600}
-ol.laps li.best .t{color:var(--live)}
-ol.laps li.best .n::after{content:" · best";color:var(--live)}
-.empty{color:var(--fg-dim);font-size:.9rem;margin:0}
-.err{color:var(--warn);font-size:.9rem}
-pre.out{background:var(--panel-2);border:1px solid var(--line);border-radius:9px;padding:10px;
-  font-size:.75rem;line-height:1.4;color:#c7d2e0;white-space:pre-wrap;overflow:auto;max-height:160px;margin:10px 0 0}
-.foot{color:var(--fg-dim);font-size:.82rem;margin:16px 2px 0;line-height:1.5}
-@media (prefers-reduced-motion:reduce){*{transition:none!important}}
-</style>
-</head>
-<body>
-
-<h1>Time trial timer <span>leave the frame, come back, done</span></h1>
-
-<div class="stage" id="stage" data-state="idle" data-present="0">
-  <video id="video" playsinline autoplay muted></video>
-  <div class="cue" id="cue">
-    <div>Tap start to turn on the camera</div>
-    <small>Prop the phone so it can see your start spot</small>
-  </div>
-  <div class="meter"><i id="bar"></i><b id="mark"></b></div>
-</div>
-
-<div class="readout" id="readout" data-state="idle">0.<span class="ms">00</span></div>
-<p class="status" id="status">Front camera, so you can see the screen from the start line.</p>
-
-<div class="row">
-  <button class="btn primary" id="main">Start camera</button>
-  <button class="btn stop" id="halt" hidden>Stop now</button>
-  <button class="btn" id="redo" hidden>Reset</button>
-</div>
-
-<div class="panel">
-  <h2>Setup</h2>
-  <div class="field">
-    <label for="mode">Mode
-      <span class="hint">Gate: nobody in frame, each pass toggles the clock. Stand and go: start in frame, leave, come back.</span>
-    </label>
-    <select id="mode">
-      <option value="auto" selected>Auto</option>
-      <option value="gate">Run past</option>
-      <option value="stand">Stand and go</option>
-    </select>
-  </div>
-  <div class="field">
-    <label for="sens">Sensitivity
-      <span class="hint">Higher catches you sooner. Lower ignores wind and shadows.</span>
-    </label>
-    <input type="range" id="sens" min="1" max="10" step="1" value="6">
-  </div>
-  <div class="field">
-    <label for="delay">Time to clear the frame
-      <span class="hint">Countdown before it memorizes the empty scene.</span>
-    </label>
-    <select id="delay">
-      <option value="5">5 sec</option>
-      <option value="8" selected>8 sec</option>
-      <option value="12">12 sec</option>
-      <option value="20">20 sec</option>
-    </select>
-  </div>
-  <div class="field">
-    <label for="onmove">Start on first movement
-      <span class="hint">Stand and go only. Off means the clock waits until you have cleared the frame.</span>
-    </label>
-    <input type="checkbox" id="onmove" checked>
-  </div>
-  <div class="field">
-    <label for="loop">Auto re-arm for the next rep</label>
-    <input type="checkbox" id="loop" checked>
-  </div>
-  <div class="field">
-    <label for="beep">Beep on start and stop</label>
-    <input type="checkbox" id="beep" checked>
-  </div>
-  <div class="field">
-    <label for="flip">Camera</label>
-    <button class="mini" id="flip">Front</button>
-  </div>
-</div>
-
-<div class="panel">
-  <h2>Reps</h2>
-  <ol class="laps" id="laps"></ol>
-  <p class="empty" id="lapsEmpty">Your times land here, and stay on this phone.</p>
-  <div class="row" style="margin-top:10px">
-    <button class="mini" id="clear" style="flex:1">Clear reps</button>
-  </div>
-</div>
-
-<div class="panel" id="deploy" hidden>
-  <h2>Deploy</h2>
-  <div class="row">
-    <button class="mini" id="pull" style="flex:1">Update from GitHub</button>
-    <button class="mini" id="forget">Forget key</button>
-  </div>
-  <pre class="out" id="pullOut" hidden></pre>
-</div>
-
-<p class="foot">
-  Run past mode is the one for flying starts: leave the frame empty, and the clock starts the instant
-  any part of you crosses it, then stops on your next pass. You never have to stop in frame.
-  Camera lag shifts both ends by the same amount, so the elapsed time stays honest.
-</p>
-
-<script>
 (function(){
 "use strict";
 
@@ -300,7 +53,6 @@ var NOISE_GRACE=700;   // wait this long after you clear before sampling empty s
 var NOISE_WIN=1100;    // how long to sample it for
 var RETURN_MIN=0.035, RETURN_MAX=0.095;
 var AWAY_GUARD=500;    // no stop allowed for this long after you clear the frame
-var MIN_PIX=120;       // absolute floor, about 1% of the frame, so a bird cannot trip it
 
 var state='idle';
 var stream=null, raf=null, rvfc=false, pumping=false, facing='user';
@@ -437,7 +189,7 @@ function sample(){
     for(var k=0;k<N;k++) acc[k]+=cur[k];
     accCount++;
   }
-  return {s: bg?count/N:0, e: bg?smax/STRIP_PIX:0, m: hp?mcount/N:0, c: bg?count:0};
+  return {s: bg?count/N:0, e: bg?smax/STRIP_PIX:0, m: hp?mcount/N:0};
 }
 
 // rate is per second, so adaptation speed no longer depends on frame rate
@@ -497,11 +249,7 @@ function frame(){
     motionHist.push(r.m);
     if(motionHist.length>90) motionHist.shift();
 
-    // in gate mode the reference is always the empty scene, so the crossing metric
-    // applies for the whole rep. Whole frame coverage would call a distant runner
-    // absent the moment the clock started.
-    var crossing = gateMode ? (state==='ready' || state==='running')
-                            : (state==='running' && leftOnce);
+    var crossing = (state==='running' && leftOnce) || (state==='ready' && gateMode);
     var score, fast=false;
     if(crossing){
       var tFull=Math.max(0.02,threshold()*0.85);
@@ -510,7 +258,6 @@ function frame(){
     }else{
       score=r.s/Math.max(0.02,threshold());
     }
-    if(r.c<MIN_PIX){ score=Math.min(score,0.4); fast=false; }  // too small to be a person
     classify(score,now,fast);
 
     bar.style.width=Math.min(100,score*50).toFixed(1)+'%';
@@ -782,6 +529,3 @@ pullBtn.addEventListener('click',function(){
 
 load(); show(0);
 })();
-</script>
-</body>
-</html>

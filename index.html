@@ -229,8 +229,8 @@ pre.out{background:var(--panel-2);border:1px solid var(--line);border-radius:9px
 </div>
 
 <p class="foot">
-  The clock starts the instant you move and stops the instant you reappear at the edge of the frame.
-  Camera lag shifts both ends by the same amount, so the elapsed time stays honest.
+  The clock starts the instant you move and stops the instant any part of you crosses back into frame,
+  edge included. Camera lag shifts both ends by the same amount, so the elapsed time stays honest.
 </p>
 
 <script>
@@ -270,12 +270,14 @@ var cur=new Uint8Array(N);
 var prev=new Uint8Array(N);
 var hasPrev=false;
 var bg=null, acc=null, accCount=0, accumulating=false;
+var STRIPS=8, STRIP_W=W/STRIPS, STRIP_PIX=(W/STRIPS)*H;
+var strip=new Int32Array(STRIPS);
 
 var PIXEL_DIFF=26;     // background difference that counts as "not the empty scene"
 var MOTION_DIFF=18;    // frame to frame difference that counts as movement
 var DEBOUNCE_OUT=3;    // frames to confirm you left
 var DEBOUNCE_IN=2;     // frames to confirm you are back
-var MIN_RUN=900;       // ignore a stop before this
+var MIN_RUN=600;       // ignore a stop before this
 var SETTLE=700;        // how long you must be in frame before it arms
 var PROVISIONAL=4000;  // movement must turn into leaving within this, or it is a false start
 
@@ -285,7 +287,7 @@ var isPresent=null, pend=null, changedAt=0;
 var startT=0, countEnd=0, doneAt=0, waitSince=0;
 var leftOnce=false, provisional=false;
 var motionHist=[], motionThr=0.015, mpend=null;
-var returnThr=0.05, awayNoiseMax=0, noiseEnd=0, noiseLocked=false;
+var returnThr=0.06, baseNoise=0, awayNoiseMax=0, noiseEnd=0, noiseLocked=false;
 var audioCtx=null;
 var laps=[];
 
@@ -383,19 +385,23 @@ function startCamera(){
 function sample(){
   ctx.drawImage(video,0,0,W,H);
   var d=ctx.getImageData(0,0,W,H).data;
-  var hp=hasPrev, count=0, mcount=0, p=0;
+  var hp=hasPrev, count=0, mcount=0, p=0, x=0;
+  strip.fill(0);
   for(var i=0;i<d.length;i+=4,p++){
     var g=(d[i]*77+d[i+1]*150+d[i+2]*29)>>8;
     if(hp && Math.abs(g-prev[p])>MOTION_DIFF) mcount++;
     cur[p]=g;
-    if(bg && Math.abs(g-bg[p])>PIXEL_DIFF) count++;
+    if(bg && Math.abs(g-bg[p])>PIXEL_DIFF){ count++; strip[(x/STRIP_W)|0]++; }
+    if(++x===W) x=0;
   }
   prev.set(cur); hasPrev=true;
+  var smax=0;
+  for(var q=0;q<STRIPS;q++) if(strip[q]>smax) smax=strip[q];
   if(accumulating){
     for(var k=0;k<N;k++) acc[k]+=cur[k];
     accCount++;
   }
-  return {s: bg?count/N:0, m: hp?mcount/N:0};
+  return {s: bg?count/N:0, e: bg?smax/STRIP_PIX:0, m: hp?mcount/N:0};
 }
 
 function adaptBg(rate){
@@ -433,7 +439,6 @@ function classify(score,now,tEnter,tExit){
 function beginAway(at){
   leftOnce=true; provisional=false;
   awayNoiseMax=0; noiseEnd=at+1200; noiseLocked=false;
-  returnThr=threshold();
 }
 
 function loop(){
@@ -444,12 +449,12 @@ function loop(){
     motionHist.push(r.m);
     if(motionHist.length>60) motionHist.shift();
 
-    var t=threshold(), tEnter=t, tExit=t*0.55;
-    if(state==='running' && leftOnce) tEnter=returnThr;
-    classify(r.s,now,tEnter,tExit);
+    var t=threshold(), tEnter=t, tExit=t*0.55, metric=r.s;
+    if(state==='running' && leftOnce){ metric=r.e; tEnter=returnThr; tExit=returnThr*0.6; }
+    classify(metric,now,tEnter,tExit);
 
     var scale=Math.max(tEnter*2,0.02);
-    bar.style.width=Math.min(100,(r.s/scale)*100).toFixed(1)+'%';
+    bar.style.width=Math.min(100,(metric/scale)*100).toFixed(1)+'%';
     mark.style.left='calc('+Math.min(100,(tEnter/scale)*100).toFixed(1)+'% - 1px)';
     stage.dataset.present = isPresent ? '1':'0';
     tick(now,r);
@@ -477,12 +482,13 @@ function tick(now,r){
 
   if(state==='waitin'){
     adaptBg(isPresent?0:0.02);
-    if(!isPresent) return;
+    if(!isPresent){ if(r.e>baseNoise) baseNoise=r.e; return; }
     var still=quietMax(20);
     var settled = now-changedAt>SETTLE;
     var timedOut = now-waitSince>7000;
     if(settled && (still<0.02 || timedOut)){
       motionThr=Math.max(0.010, (timedOut?0.02:still)*3.5);
+      returnThr=Math.min(Math.max(0.06, threshold()*1.2), Math.max(0.04, baseNoise*2.5));
       setState('ready');
       mpend=null; leftOnce=false; provisional=false;
       beepArm(); show(0);
@@ -524,9 +530,10 @@ function tick(now,r){
     if(leftOnce && !isPresent){
       adaptBg(0.015);
       if(!noiseLocked){
-        if(now<noiseEnd){ if(r.s>awayNoiseMax) awayNoiseMax=r.s; }
+        if(now<noiseEnd){ if(r.e>awayNoiseMax) awayNoiseMax=r.e; }
         else{
-          returnThr=Math.min(threshold(), Math.max(0.012, awayNoiseMax*2.5));
+          var lift=Math.min(Math.max(0.06,threshold()*1.2), awayNoiseMax*2.5);
+          if(lift>returnThr) returnThr=lift;
           noiseLocked=true;
         }
       }
@@ -582,7 +589,7 @@ function renderLaps(){
 
 function calibrate(){
   bg=null; isPresent=null; pend=null; mpend=null; lastTick=-1;
-  accumulating=false; leftOnce=false; provisional=false; motionHist=[];
+  accumulating=false; leftOnce=false; provisional=false; motionHist=[]; baseNoise=0;
   setState('countdown');
   countEnd=performance.now()+parseInt(delayEl.value,10)*1000;
   show(0);

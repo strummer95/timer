@@ -22,16 +22,6 @@
   --warn:#ff6b5e;
   --radius:14px;
 }
-@media (prefers-color-scheme: light){
-  :root:not([data-theme="dark"]){
-    --bg:#0e1116; --panel:#171c25; --panel-2:#1f2631; --line:#2c3543;
-    --fg:#eef2f8; --fg-dim:#9aa7b8;
-  }
-}
-:root[data-theme="light"]{
-  --bg:#0e1116; --panel:#171c25; --panel-2:#1f2631; --line:#2c3543;
-  --fg:#eef2f8; --fg-dim:#9aa7b8;
-}
 *{box-sizing:border-box}
 html,body{margin:0;padding:0}
 body{
@@ -57,7 +47,6 @@ h1 span{color:var(--fg-dim);font-weight:500;padding-left:.5em;border-left:2px so
 button{font:inherit;color:inherit;cursor:pointer}
 :focus-visible{outline:2px solid var(--done);outline-offset:2px}
 
-/* camera */
 .stage{
   position:relative;
   border-radius:var(--radius);
@@ -93,7 +82,6 @@ video.mirror{transform:scaleX(-1)}
 .meter b{position:absolute;top:-3px;width:2px;height:13px;background:var(--warn);left:0}
 .stage[data-present="1"] .meter i{background:var(--live)}
 
-/* timer */
 .readout{
   font-family:"Barlow Condensed",system-ui,sans-serif;
   font-variant-numeric:tabular-nums;
@@ -112,10 +100,9 @@ video.mirror{transform:scaleX(-1)}
 .readout .ms{font-size:.5em;color:var(--fg-dim)}
 .status{text-align:center;color:var(--fg-dim);min-height:1.4em;margin:0 0 14px;font-size:.95rem}
 
-/* controls */
 .row{display:flex;gap:10px}
 .btn{
-  flex:1;border:0;border-radius:12px;padding:15px 12px;
+  flex:1;border-radius:12px;padding:15px 12px;
   background:var(--panel-2);border:1px solid var(--line);
   font-family:"Barlow Condensed",system-ui,sans-serif;
   font-size:1.25rem;font-weight:600;
@@ -141,6 +128,7 @@ input[type=range]{width:130px;accent-color:var(--armed)}
 input[type=checkbox]{width:20px;height:20px;accent-color:var(--armed)}
 select{background:var(--panel-2);color:var(--fg);border:1px solid var(--line);border-radius:8px;padding:6px 8px}
 .mini{background:var(--panel-2);border:1px solid var(--line);border-radius:9px;padding:7px 11px;font-size:.9rem}
+.mini:disabled{opacity:.6}
 
 ol.laps{list-style:none;margin:0;padding:0}
 ol.laps li{
@@ -155,6 +143,8 @@ ol.laps li.best .t{color:var(--live)}
 ol.laps li.best .n::after{content:" · best";color:var(--live)}
 .empty{color:var(--fg-dim);font-size:.9rem;margin:0}
 .err{color:var(--warn);font-size:.9rem}
+pre.out{background:var(--panel-2);border:1px solid var(--line);border-radius:9px;padding:10px;
+  font-size:.75rem;line-height:1.4;color:#c7d2e0;white-space:pre-wrap;overflow:auto;max-height:160px;margin:10px 0 0}
 .foot{color:var(--fg-dim);font-size:.82rem;margin:16px 2px 0;line-height:1.5}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
@@ -201,6 +191,12 @@ ol.laps li.best .n::after{content:" · best";color:var(--live)}
     </select>
   </div>
   <div class="field">
+    <label for="onmove">Start on first movement
+      <span class="hint">Off means the clock waits until you have cleared the frame.</span>
+    </label>
+    <input type="checkbox" id="onmove" checked>
+  </div>
+  <div class="field">
     <label for="loop">Auto re-arm for the next rep</label>
     <input type="checkbox" id="loop" checked>
   </div>
@@ -223,9 +219,18 @@ ol.laps li.best .n::after{content:" · best";color:var(--live)}
   </div>
 </div>
 
-<p class="foot" id="foot">
-  Open this link straight in your phone browser if the camera will not turn on.
-  The timer starts the instant you clear the frame and stops the instant you are back in it.
+<div class="panel" id="deploy" hidden>
+  <h2>Deploy</h2>
+  <div class="row">
+    <button class="mini" id="pull" style="flex:1">Update from GitHub</button>
+    <button class="mini" id="forget">Forget key</button>
+  </div>
+  <pre class="out" id="pullOut" hidden></pre>
+</div>
+
+<p class="foot">
+  The clock starts the instant you move and stops the instant you reappear at the edge of the frame.
+  Camera lag shifts both ends by the same amount, so the elapsed time stays honest.
 </p>
 
 <script>
@@ -247,33 +252,44 @@ var lapsEl=document.getElementById('laps');
 var lapsEmpty=document.getElementById('lapsEmpty');
 var sensEl=document.getElementById('sens');
 var delayEl=document.getElementById('delay');
+var onmoveEl=document.getElementById('onmove');
 var loopEl=document.getElementById('loop');
 var beepEl=document.getElementById('beep');
 var flipBtn=document.getElementById('flip');
 var clearBtn=document.getElementById('clear');
+var deployEl=document.getElementById('deploy');
+var pullBtn=document.getElementById('pull');
+var forgetBtn=document.getElementById('forget');
+var pullOut=document.getElementById('pullOut');
 
 var canvas=document.createElement('canvas');
 canvas.width=W;canvas.height=H;
 var ctx=canvas.getContext('2d',{willReadFrequently:true});
 
 var cur=new Uint8Array(N);
-var bg=null;
-var acc=null, accCount=0, accumulating=false;
+var prev=new Uint8Array(N);
+var hasPrev=false;
+var bg=null, acc=null, accCount=0, accumulating=false;
 
-var PIXEL_DIFF=26;
-var DEBOUNCE=3;
-var MIN_AWAY=700;
-var MIN_RUN=900;
-var SETTLE=900;
+var PIXEL_DIFF=26;     // background difference that counts as "not the empty scene"
+var MOTION_DIFF=18;    // frame to frame difference that counts as movement
+var DEBOUNCE_OUT=3;    // frames to confirm you left
+var DEBOUNCE_IN=2;     // frames to confirm you are back
+var MIN_RUN=900;       // ignore a stop before this
+var SETTLE=700;        // how long you must be in frame before it arms
+var PROVISIONAL=4000;  // movement must turn into leaving within this, or it is a false start
 
 var state='idle';
 var stream=null, raf=null, facing='user';
 var isPresent=null, pend=null, changedAt=0;
-var startT=0, endT=0, countEnd=0, doneAt=0, enteredAt=0;
+var startT=0, countEnd=0, doneAt=0, waitSince=0;
+var leftOnce=false, provisional=false;
+var motionHist=[], motionThr=0.015, mpend=null;
+var returnThr=0.05, awayNoiseMax=0, noiseEnd=0, noiseLocked=false;
 var audioCtx=null;
 var laps=[];
 
-var SKEY='timetrial:settings:v1', LKEY='timetrial:laps:v1';
+var SKEY='timetrial:settings:v1', LKEY='timetrial:laps:v1', PKEY='timetrial:pullkey:v1';
 
 function load(){
   try{
@@ -282,6 +298,7 @@ function load(){
     if(s.delay) delayEl.value=s.delay;
     if(typeof s.loop==='boolean') loopEl.checked=s.loop;
     if(typeof s.beep==='boolean') beepEl.checked=s.beep;
+    if(typeof s.onmove==='boolean') onmoveEl.checked=s.onmove;
     if(s.facing) facing=s.facing;
   }catch(e){}
   try{
@@ -294,8 +311,8 @@ function load(){
 function save(){
   try{
     localStorage.setItem(SKEY,JSON.stringify({
-      sens:sensEl.value,delay:delayEl.value,
-      loop:loopEl.checked,beep:beepEl.checked,facing:facing
+      sens:sensEl.value,delay:delayEl.value,loop:loopEl.checked,
+      beep:beepEl.checked,onmove:onmoveEl.checked,facing:facing
     }));
   }catch(e){}
 }
@@ -315,17 +332,11 @@ function fmt(ms){
   return head+'.<span class="ms">'+(cs<10?'0':'')+cs+'</span>';
 }
 function show(ms){ readout.innerHTML=fmt(ms); }
-
-function setState(s){
-  state=s;
-  stage.dataset.state=s;
-  readout.dataset.state=s;
-}
-
+function setState(s){ state=s; stage.dataset.state=s; readout.dataset.state=s; }
 function cueText(big,small){
   if(big===null){ cue.classList.add('hide'); return; }
   cue.classList.remove('hide');
-  cue.innerHTML = '<div>'+big+'</div>' + (small?'<small>'+small+'</small>':'');
+  cue.innerHTML='<div>'+big+'</div>'+(small?'<small>'+small+'</small>':'');
 }
 
 function tone(freq,dur,vol){
@@ -345,13 +356,13 @@ function beepGo(){ tone(1180,0.18,0.3); }
 function beepStop(){ tone(760,0.12,0.3); setTimeout(function(){tone(520,0.24,0.3);},150); }
 function beepTick(){ tone(880,0.07,0.16); }
 function beepArm(){ tone(660,0.09,0.2); setTimeout(function(){tone(990,0.14,0.2);},110); }
+function beepAbort(){ tone(300,0.22,0.22); }
 
 var wakeLock=null;
 function keepAwake(){
   if(!('wakeLock' in navigator)) return;
   navigator.wakeLock.request('screen').then(function(l){
-    wakeLock=l;
-    l.addEventListener('release',function(){wakeLock=null;});
+    wakeLock=l; l.addEventListener('release',function(){wakeLock=null;});
   }).catch(function(){});
 }
 document.addEventListener('visibilitychange',function(){
@@ -362,9 +373,9 @@ function startCamera(){
   var want={video:{facingMode:facing,width:{ideal:640},height:{ideal:480}},audio:false};
   return navigator.mediaDevices.getUserMedia(want).then(function(s){
     if(stream) stream.getTracks().forEach(function(t){t.stop();});
-    stream=s;
-    video.srcObject=s;
+    stream=s; video.srcObject=s;
     video.classList.toggle('mirror',facing==='user');
+    hasPrev=false;
     return video.play().catch(function(){});
   });
 }
@@ -372,68 +383,82 @@ function startCamera(){
 function sample(){
   ctx.drawImage(video,0,0,W,H);
   var d=ctx.getImageData(0,0,W,H).data;
-  var count=0,p=0;
+  var hp=hasPrev, count=0, mcount=0, p=0;
   for(var i=0;i<d.length;i+=4,p++){
     var g=(d[i]*77+d[i+1]*150+d[i+2]*29)>>8;
+    if(hp && Math.abs(g-prev[p])>MOTION_DIFF) mcount++;
     cur[p]=g;
     if(bg && Math.abs(g-bg[p])>PIXEL_DIFF) count++;
   }
+  prev.set(cur); hasPrev=true;
   if(accumulating){
     for(var k=0;k<N;k++) acc[k]+=cur[k];
     accCount++;
   }
-  return bg? count/N : 0;
+  return {s: bg?count/N:0, m: hp?mcount/N:0};
 }
 
 function adaptBg(rate){
-  if(!bg) return;
+  if(!bg||!rate) return;
   for(var k=0;k<N;k++) bg[k]+=(cur[k]-bg[k])*rate;
 }
-
-function beginCapture(){
-  acc=new Float32Array(N); accCount=0; accumulating=true;
-}
+function beginCapture(){ acc=new Float32Array(N); accCount=0; accumulating=true; }
 function finishCapture(){
   accumulating=false;
-  if(!accCount){ bg=Float32Array.from(cur); return; }
-  bg=new Float32Array(N);
-  for(var k=0;k<N;k++) bg[k]=acc[k]/accCount;
+  if(!accCount){ bg=Float32Array.from(cur); }
+  else{
+    bg=new Float32Array(N);
+    for(var k=0;k<N;k++) bg[k]=acc[k]/accCount;
+  }
   isPresent=false; pend=null; changedAt=performance.now();
 }
 
-function classify(score,now){
+function quietMax(n){
+  var max=0, start=Math.max(0,motionHist.length-n);
+  for(var i=start;i<motionHist.length;i++) if(motionHist[i]>max) max=motionHist[i];
+  return max;
+}
+
+function classify(score,now,tEnter,tExit){
   if(!bg) return;
-  var t=threshold();
-  var raw = isPresent ? (score > t*0.55) : (score > t);
+  var raw = isPresent ? (score > tExit) : (score > tEnter);
   if(isPresent===null){ isPresent=raw; changedAt=now; return; }
   if(raw===isPresent){ pend=null; return; }
+  var need = raw ? DEBOUNCE_IN : DEBOUNCE_OUT;
   if(!pend || pend.v!==raw) pend={v:raw,since:now,n:1};
   else pend.n++;
-  if(pend.n>=DEBOUNCE){
-    isPresent=raw; changedAt=pend.since; pend=null;
-  }
+  if(pend.n>=need){ isPresent=raw; changedAt=pend.since; pend=null; }
+}
+
+function beginAway(at){
+  leftOnce=true; provisional=false;
+  awayNoiseMax=0; noiseEnd=at+1200; noiseLocked=false;
+  returnThr=threshold();
 }
 
 function loop(){
   raf=requestAnimationFrame(loop);
   var now=performance.now();
-
   if(video.readyState>=2 && video.videoWidth){
-    var score=sample();
-    classify(score,now);
-    var t=threshold();
-    var pct=Math.min(100,(score/Math.max(t*2,0.02))*100);
-    bar.style.width=pct.toFixed(1)+'%';
-    mark.style.left='calc('+Math.min(100,(t/Math.max(t*2,0.02))*100).toFixed(1)+'% - 1px)';
-    stage.dataset.present = isPresent ? '1':'0';
-    tick(now);
-  }
+    var r=sample();
+    motionHist.push(r.m);
+    if(motionHist.length>60) motionHist.shift();
 
+    var t=threshold(), tEnter=t, tExit=t*0.55;
+    if(state==='running' && leftOnce) tEnter=returnThr;
+    classify(r.s,now,tEnter,tExit);
+
+    var scale=Math.max(tEnter*2,0.02);
+    bar.style.width=Math.min(100,(r.s/scale)*100).toFixed(1)+'%';
+    mark.style.left='calc('+Math.min(100,(tEnter/scale)*100).toFixed(1)+'% - 1px)';
+    stage.dataset.present = isPresent ? '1':'0';
+    tick(now,r);
+  }
   if(state==='running') show(now-startT);
 }
 
 var lastTick=-1;
-function tick(now){
+function tick(now,r){
   if(state==='countdown'){
     var left=Math.max(0,countEnd-now);
     var s=Math.ceil(left/1000);
@@ -443,8 +468,8 @@ function tick(now){
     if(left<=900 && !accumulating) beginCapture();
     if(left<=0){
       finishCapture();
-      setState('waitin');
-      cueText('Step into the frame','Stand where you will start');
+      setState('waitin'); waitSince=now;
+      cueText('Step into the frame','Stand still on your start spot');
       statusEl.textContent='Scene memorized. Walk in and hold still for a second.';
     }
     return;
@@ -452,46 +477,68 @@ function tick(now){
 
   if(state==='waitin'){
     adaptBg(isPresent?0:0.02);
-    if(isPresent && now-changedAt>SETTLE){
+    if(!isPresent) return;
+    var still=quietMax(20);
+    var settled = now-changedAt>SETTLE;
+    var timedOut = now-waitSince>7000;
+    if(settled && (still<0.02 || timedOut)){
+      motionThr=Math.max(0.010, (timedOut?0.02:still)*3.5);
       setState('ready');
-      enteredAt=now;
-      beepArm();
-      cueText('Go when you are ready','Timer starts as you leave the frame');
+      mpend=null; leftOnce=false; provisional=false;
+      beepArm(); show(0);
+      cueText('Go when you are ready', onmoveEl.checked
+        ? 'Clock starts the moment you move'
+        : 'Clock starts as you clear the frame');
       statusEl.textContent='Armed. Run.';
-      show(0);
-      mainBtn.hidden=true; redoBtn.hidden=false; haltBtn.hidden=true;
+      mainBtn.hidden=true; haltBtn.hidden=true; redoBtn.hidden=false;
       redoBtn.textContent='Recalibrate';
     }
     return;
   }
 
   if(state==='ready'){
-    if(isPresent) adaptBg(0);
-    if(!isPresent){
-      startT=changedAt;
-      setState('running');
-      beepGo();
-      cueText(null);
-      statusEl.textContent='Running. Come back into frame to stop.';
-      mainBtn.hidden=true; redoBtn.hidden=true; haltBtn.hidden=false;
+    if(!isPresent){                       // cleared the frame without a movement trigger
+      startT=changedAt; beginAway(changedAt); go();
+      return;
+    }
+    if(onmoveEl.checked){
+      if(r.m>motionThr){
+        if(!mpend) mpend={since:now,n:1}; else mpend.n++;
+        if(mpend.n>=2){ startT=mpend.since; provisional=true; leftOnce=false; mpend=null; go(); }
+      } else mpend=null;
     }
     return;
   }
 
   if(state==='running'){
-    if(!isPresent) adaptBg(0.015);
-    var el=now-startT;
-    if(isPresent && el>MIN_RUN && now-changedAt>0){
-      finish(changedAt);
+    if(!leftOnce){
+      if(!isPresent){ beginAway(changedAt); }
+      else if(now-startT>PROVISIONAL){     // moved but never left
+        setState('waitin'); waitSince=now; provisional=false;
+        beepAbort(); show(0);
+        cueText('False start','Stand still and it will re-arm');
+        statusEl.textContent='You moved but never cleared the frame. Re-arming.';
+        return;
+      }
     }
+    if(leftOnce && !isPresent){
+      adaptBg(0.015);
+      if(!noiseLocked){
+        if(now<noiseEnd){ if(r.s>awayNoiseMax) awayNoiseMax=r.s; }
+        else{
+          returnThr=Math.min(threshold(), Math.max(0.012, awayNoiseMax*2.5));
+          noiseLocked=true;
+        }
+      }
+    }
+    if(leftOnce && isPresent && now-startT>MIN_RUN) finish(changedAt);
     return;
   }
 
   if(state==='done'){
     if(loopEl.checked && now-doneAt>2600){
-      setState('waitin');
-      changedAt=now;
-      cueText('Reset for the next rep','Stand on your start spot');
+      setState('waitin'); waitSince=now; changedAt=now;
+      cueText('Next rep','Stand still on your start spot');
       statusEl.textContent='Re-arming.';
       haltBtn.hidden=true; redoBtn.hidden=false; mainBtn.hidden=true;
     }
@@ -499,21 +546,24 @@ function tick(now){
   }
 }
 
+function go(){
+  setState('running'); beepGo(); cueText(null);
+  statusEl.textContent = provisional ? 'Running. Clear the frame to confirm.' : 'Running. Come back into frame to stop.';
+  mainBtn.hidden=true; redoBtn.hidden=true; haltBtn.hidden=false;
+}
+
 function finish(stopTime){
-  endT=stopTime;
-  var ms=endT-startT;
-  setState('done');
-  show(ms);
-  beepStop();
+  var ms=stopTime-startT;
+  setState('done'); show(ms); beepStop();
   doneAt=performance.now();
   laps.unshift({ms:Math.round(ms),at:Date.now()});
   laps=laps.slice(0,50);
   saveLaps(); renderLaps();
   var best=Math.min.apply(null,laps.map(function(l){return l.ms;}));
-  statusEl.textContent = (Math.round(ms)===best && laps.length>1) ? 'Best rep so far.' : 'Rep logged.';
-  cueText('Stopped', loopEl.checked ? 'Re-arming in a moment' : 'Tap reset for another');
+  statusEl.textContent=(Math.round(ms)===best && laps.length>1)?'Best rep so far.':'Rep logged.';
+  cueText('Stopped', loopEl.checked?'Re-arming in a moment':'Tap reset for another');
   haltBtn.hidden=true; redoBtn.hidden=false; mainBtn.hidden=true;
-  redoBtn.textContent = loopEl.checked ? 'Recalibrate' : 'Go again';
+  redoBtn.textContent=loopEl.checked?'Recalibrate':'Go again';
 }
 
 function renderLaps(){
@@ -524,65 +574,78 @@ function renderLaps(){
   laps.forEach(function(l,i){
     var li=document.createElement('li');
     if(l.ms===best) li.className='best';
-    var n=document.createElement('span'); n.className='n';
-    n.textContent='Rep '+(laps.length-i);
-    var t=document.createElement('span'); t.className='t';
-    t.innerHTML=fmt(l.ms);
-    li.appendChild(n); li.appendChild(t);
-    lapsEl.appendChild(li);
+    var n=document.createElement('span'); n.className='n'; n.textContent='Rep '+(laps.length-i);
+    var t=document.createElement('span'); t.className='t'; t.innerHTML=fmt(l.ms);
+    li.appendChild(n); li.appendChild(t); lapsEl.appendChild(li);
   });
 }
 
 function calibrate(){
-  bg=null; isPresent=null; pend=null; lastTick=-1; accumulating=false;
+  bg=null; isPresent=null; pend=null; mpend=null; lastTick=-1;
+  accumulating=false; leftOnce=false; provisional=false; motionHist=[];
   setState('countdown');
   countEnd=performance.now()+parseInt(delayEl.value,10)*1000;
   show(0);
   statusEl.textContent='Clear the frame so it can learn the empty scene.';
-  mainBtn.hidden=true; redoBtn.hidden=false; haltBtn.hidden=true;
+  mainBtn.hidden=true; haltBtn.hidden=true; redoBtn.hidden=false;
   redoBtn.textContent='Cancel';
 }
 
 mainBtn.addEventListener('click',function(){
   tone(880,0.05,0.12);
-  mainBtn.disabled=true;
-  mainBtn.textContent='Starting camera';
+  mainBtn.disabled=true; mainBtn.textContent='Starting camera';
   startCamera().then(function(){
-    mainBtn.disabled=false;
-    keepAwake();
+    mainBtn.disabled=false; keepAwake();
     if(!raf) loop();
     calibrate();
   }).catch(function(err){
-    mainBtn.disabled=false;
-    mainBtn.textContent='Start camera';
+    mainBtn.disabled=false; mainBtn.textContent='Start camera';
     cueText('Camera blocked','Allow camera access, or open this page directly in your browser');
-    statusEl.innerHTML='<span class="err">No camera: '+(err && err.name ? err.name : 'unavailable')+'</span>';
+    statusEl.innerHTML='<span class="err">No camera: '+(err&&err.name?err.name:'unavailable')+'</span>';
   });
 });
-
 redoBtn.addEventListener('click',function(){ calibrate(); });
-
-haltBtn.addEventListener('click',function(){
-  if(state==='running') finish(performance.now());
-});
-
+haltBtn.addEventListener('click',function(){ if(state==='running') finish(performance.now()); });
 flipBtn.addEventListener('click',function(){
   facing = facing==='user' ? 'environment' : 'user';
   flipBtn.textContent = facing==='user' ? 'Front' : 'Rear';
   save();
-  if(stream){ startCamera().then(function(){ calibrate(); }).catch(function(){}); }
+  if(stream) startCamera().then(function(){ calibrate(); }).catch(function(){});
+});
+clearBtn.addEventListener('click',function(){ laps=[]; saveLaps(); renderLaps(); });
+[sensEl,delayEl,loopEl,beepEl,onmoveEl].forEach(function(el){ el.addEventListener('change',save); });
+
+/* deploy */
+if(/duckandrabbit\.co$/i.test(location.hostname)) deployEl.hidden=false;
+forgetBtn.addEventListener('click',function(){
+  try{ localStorage.removeItem(PKEY); }catch(e){}
+  pullOut.hidden=false; pullOut.textContent='Key cleared.';
+});
+pullBtn.addEventListener('click',function(){
+  var k='';
+  try{ k=localStorage.getItem(PKEY)||''; }catch(e){}
+  if(!k){ k=(window.prompt('Pull key')||'').trim(); if(!k) return; }
+  pullBtn.disabled=true; pullBtn.textContent='Updating';
+  fetch('pull.php?key='+encodeURIComponent(k),{cache:'no-store'})
+    .then(function(res){ return res.text().then(function(txt){ return {status:res.status,ok:res.ok,txt:txt}; }); })
+    .then(function(res){
+      pullOut.hidden=false; pullOut.textContent=res.txt.trim()||('HTTP '+res.status);
+      if(res.status===401){
+        try{ localStorage.removeItem(PKEY); }catch(e){}
+        pullBtn.textContent='Wrong key, tap to retry'; pullBtn.disabled=false; return;
+      }
+      if(!res.ok){ pullBtn.textContent='Update failed'; pullBtn.disabled=false; return; }
+      try{ localStorage.setItem(PKEY,k); }catch(e){}
+      pullBtn.textContent='Updated, reloading';
+      setTimeout(function(){ location.href=location.pathname+'?v='+Date.now(); },1000);
+    })
+    .catch(function(){
+      pullOut.hidden=false; pullOut.textContent='No response from pull.php';
+      pullBtn.textContent='Update from GitHub'; pullBtn.disabled=false;
+    });
 });
 
-clearBtn.addEventListener('click',function(){
-  laps=[]; saveLaps(); renderLaps();
-});
-
-[sensEl,delayEl,loopEl,beepEl].forEach(function(el){
-  el.addEventListener('change',save);
-});
-
-load();
-show(0);
+load(); show(0);
 })();
 </script>
 </body>

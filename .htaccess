@@ -1,0 +1,30 @@
+# ---- BEGIN dnr-devfile-deny (2026-10-19) ---------------------------------
+# Notes, backups, samples and dotfiles are never served. Works without
+# mod_rewrite (IONOS subdomains may not run it). Apache 2.4 + 2.2 fallback.
+# FilesMatch matches the file's basename, so config.sample.php / *.example.php
+# (which end in .php) still execute normally; only *.sample, *.bak etc. are denied.
+<FilesMatch "(?i)(\.(md|markdown|sample|bak|old|orig|save|swp|swo|tmp|dist|log|sql|sqlite|sqlite-wal|sqlite-shm|sqlite-journal|db|ini|env|lock|ya?ml)|~|^(composer|package)(-lock)?\.json)$">
+    <IfModule mod_authz_core.c>
+        Require all denied
+    </IfModule>
+    <IfModule !mod_authz_core.c>
+        Order allow,deny
+        Deny from all
+    </IfModule>
+</FilesMatch>
+# Dotfiles (.env, .deploy-token, .htaccess.bak, .gitignore ...).
+<FilesMatch "^\.">
+    <IfModule mod_authz_core.c>
+        Require all denied
+    </IfModule>
+    <IfModule !mod_authz_core.c>
+        Order allow,deny
+        Deny from all
+    </IfModule>
+</FilesMatch>
+# Files INSIDE .git/ have ordinary basenames (config, HEAD), so FilesMatch
+# cannot see them. mod_alias can, and needs no mod_rewrite.
+<IfModule mod_alias.c>
+    RedirectMatch 403 (?i)(^|/)\.(git|svn|hg|deploy_tmp)(/|$)
+</IfModule>
+# ---- END dnr-devfile-deny -------------------------------------------------

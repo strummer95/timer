@@ -11,6 +11,14 @@
 
 declare(strict_types=1);
 
+// Pulls restore this tracked file, so it has to go inert on its own.
+// Only a checkout that already has config.php is "installed".
+if (is_dir(__DIR__.'/.git') && is_file(__DIR__.'/config.php')) {
+    http_response_code(410);
+    header('Content-Type: text/plain; charset=utf-8');
+    exit("Already installed. Delete install.php.");
+}
+
 const REPO_URL = 'https://github.com/strummer95/timer.git';
 
 $dir  = __DIR__;
@@ -50,10 +58,10 @@ if (($_POST['go'] ?? '') === '1') {
         }
     }
 
-    // Deploy key for pull.php, kept out of git.
+    // Deploy key for pull.php, kept out of git. Never printed: anyone can
+    // load this page, so the key is read from config.php in the file manager.
     if ($fail === null && !is_file($dir . '/config.php')) {
-        $key = bin2hex(random_bytes(12));
-        $php = "<?php\nreturn ['pull_key' => '" . $key . "'];\n";
+        $php = "<?php\nreturn ['pull_key' => '" . bin2hex(random_bytes(24)) . "'];\n";
         if (file_put_contents($dir . '/config.php', $php) === false) {
             $fail = 'Could not write config.php. Check folder permissions.';
         }
@@ -64,11 +72,6 @@ if (($_POST['go'] ?? '') === '1') {
     }
 }
 
-$key = '';
-if (is_file($dir . '/config.php')) {
-    $cfg = include $dir . '/config.php';
-    $key = $cfg['pull_key'] ?? '';
-}
 $base = 'https://' . ($_SERVER['HTTP_HOST'] ?? '13.duckandrabbit.co')
       . rtrim(dirname($_SERVER['SCRIPT_NAME'] ?? '/timer/install.php'), '/');
 ?>
@@ -95,8 +98,8 @@ code{background:#171c25;padding:2px 6px;border-radius:5px}
 <?php if ($done): ?>
   <p class="ok">Installed.</p>
   <p>The timer is live at <a href="<?= htmlspecialchars($base) ?>/"><?= htmlspecialchars($base) ?>/</a></p>
-  <p>Bookmark this to pull future updates:<br>
-     <code><?= htmlspecialchars($base) ?>/pull.php?key=<?= htmlspecialchars($key) ?></code></p>
+  <p>The pull key is in <code>config.php</code> in this folder (open it in the IONOS file
+     manager). Updates: <code><?= htmlspecialchars($base) ?>/pull.php?key=…</code></p>
   <p>Now delete <code>install.php</code> from this folder.</p>
 <?php elseif ($fail !== null): ?>
   <p class="bad"><?= htmlspecialchars($fail) ?></p>

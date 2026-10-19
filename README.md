@@ -42,10 +42,17 @@ checks recorded times against the true interval.
 
 ## Deploy
 
-One time: make a `timer` folder in the web root of 13.duckandrabbit.co, upload
-`install.php`, visit it, click Install, then delete `install.php`.
+`install.php` is only for the hand-upload path: make a `timer` folder in the
+web root of 13.duckandrabbit.co, upload `install.php`, visit it, and click
+Install. The pull URL is printed only when that same request mints `config.php`.
+If `.git` and `config.php` are already present, `install.php` returns 410 and
+does not print the key. Delete it when the hand install finishes. Pulls restore
+the file from git; the restored copy stays off once the app is installed.
 
-After that: push to `main` here, then hit `pull.php?key=...` (the installer
-prints the full URL), or use the Update from GitHub button on the page.
+The other path is dealdash's `install-timer.php`, which checks this folder out
+on the server. Use that instead of `install.php` when dealdash does the install.
+
+After that: push to `main` here, then hit `pull.php?key=...`, or use the
+Update from GitHub button on the page.
 
 `config.php` holds the pull key and is gitignored — it only exists on the server.

@@ -44,9 +44,9 @@ checks recorded times against the true interval.
 
 `install.php` is only for the hand-upload path: make a `timer` folder in the
 web root of 13.duckandrabbit.co, upload `install.php`, visit it, and click
-Install. The pull URL is printed only when that same request mints `config.php`.
-If `.git` and `config.php` are already present, `install.php` returns 410 and
-does not print the key. Delete it when the hand install finishes. Pulls restore
+Install. It writes the pull key to `config.php` and never prints it; read it
+from `config.php` in the IONOS file manager. Once `.git` and `config.php` are
+present, `install.php` returns 410. Delete it when the hand install finishes. Pulls restore
 the file from git; the restored copy stays off once the app is installed.
 
 The other path is dealdash's `install-timer.php`, which checks this folder out

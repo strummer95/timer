@@ -25,9 +25,6 @@ $dir  = __DIR__;
 $log  = [];
 $done = false;
 $fail = null;
-// Set only when this request writes a new config.php. Never read a key
-// that was already on disk — that value must not be printed.
-$mintedKey = null;
 
 function run(string $cmd, array &$log): string {
     $out = (string) shell_exec($cmd . ' 2>&1');
@@ -61,15 +58,12 @@ if (($_POST['go'] ?? '') === '1') {
         }
     }
 
-    // Deploy key for pull.php, kept out of git. Shown later only if this
-    // request just created it.
+    // Deploy key for pull.php, kept out of git. Never printed: anyone can
+    // load this page, so the key is read from config.php in the file manager.
     if ($fail === null && !is_file($dir . '/config.php')) {
-        $newKey = bin2hex(random_bytes(12));
-        $php = "<?php\nreturn ['pull_key' => '" . $newKey . "'];\n";
+        $php = "<?php\nreturn ['pull_key' => '" . bin2hex(random_bytes(24)) . "'];\n";
         if (file_put_contents($dir . '/config.php', $php) === false) {
             $fail = 'Could not write config.php. Check folder permissions.';
-        } else {
-            $mintedKey = $newKey;
         }
     }
 
@@ -104,12 +98,8 @@ code{background:#171c25;padding:2px 6px;border-radius:5px}
 <?php if ($done): ?>
   <p class="ok">Installed.</p>
   <p>The timer is live at <a href="<?= htmlspecialchars($base) ?>/"><?= htmlspecialchars($base) ?>/</a></p>
-  <?php if (is_string($mintedKey) && $mintedKey !== ''): ?>
-  <p>Bookmark this to pull future updates (shown only this once):<br>
-     <code><?= htmlspecialchars($base) ?>/pull.php?key=<?= htmlspecialchars($mintedKey) ?></code></p>
-  <?php else: ?>
-  <p>A pull key is already in <code>config.php</code> on this server. It is not shown here.</p>
-  <?php endif; ?>
+  <p>The pull key is in <code>config.php</code> in this folder (open it in the IONOS file
+     manager). Updates: <code><?= htmlspecialchars($base) ?>/pull.php?key=…</code></p>
   <p>Now delete <code>install.php</code> from this folder.</p>
 <?php elseif ($fail !== null): ?>
   <p class="bad"><?= htmlspecialchars($fail) ?></p>

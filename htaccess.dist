@@ -1,3 +1,9 @@
+# Timer: web access rules. The live copy is .htaccess, which is server-only
+# (gitignored) so a git reset never overwrites it. pull.php and install.php copy
+# this template into place when .htaccess is missing. Edit the live copy by hand
+# when this template changes.
+Options -Indexes
+
 # ---- BEGIN dnr-devfile-deny (2026-10-19) ---------------------------------
 # Notes, backups, samples and dotfiles are never served. Works without
 # mod_rewrite (IONOS subdomains may not run it). Apache 2.4 + 2.2 fallback.
@@ -26,5 +32,22 @@
 # cannot see them. mod_alias can, and needs no mod_rewrite.
 <IfModule mod_alias.c>
     RedirectMatch 403 (?i)(^|/)\.(git|svn|hg|deploy_tmp)(/|$)
+    RedirectMatch 404 (?i)^/(.*/)?(backups?|backup[^/]*|data|logs?)(/|$)
 </IfModule>
 # ---- END dnr-devfile-deny -------------------------------------------------
+# Server-only files: config and secrets, keys, archives, this template.
+<FilesMatch "(?i)(^config\.php$|-(secrets?|config)\.php$|\.(key|pem|zip|tar|gz|bak|sql|log|dist)$)">
+    <IfModule mod_authz_core.c>
+        Require all denied
+    </IfModule>
+    <IfModule !mod_authz_core.c>
+        Order allow,deny
+        Deny from all
+    </IfModule>
+</FilesMatch>
+
+<IfModule mod_headers.c>
+    Header always set X-Content-Type-Options "nosniff"
+    Header always set X-Frame-Options "SAMEORIGIN"
+    Header always set Referrer-Policy "strict-origin-when-cross-origin"
+</IfModule>

@@ -761,11 +761,11 @@ pullBtn.addEventListener('click',function(){
   try{ k=localStorage.getItem(PKEY)||''; }catch(e){}
   if(!k){ k=(window.prompt('Pull key')||'').trim(); if(!k) return; }
   pullBtn.disabled=true; pullBtn.textContent='Updating';
-  fetch('pull.php?key='+encodeURIComponent(k),{cache:'no-store'})
+  fetch('pull.php',{method:'POST',cache:'no-store',headers:{'X-Deploy-Key':k}})
     .then(function(res){ return res.text().then(function(txt){ return {status:res.status,ok:res.ok,txt:txt}; }); })
     .then(function(res){
       pullOut.hidden=false; pullOut.textContent=res.txt.trim()||('HTTP '+res.status);
-      if(res.status===401){
+      if(res.status===401||res.status===403){
         try{ localStorage.removeItem(PKEY); }catch(e){}
         pullBtn.textContent='Wrong key, tap to retry'; pullBtn.disabled=false; return;
       }

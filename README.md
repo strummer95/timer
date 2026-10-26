@@ -42,17 +42,25 @@ checks recorded times against the true interval.
 
 ## Deploy
 
-`install.php` is only for the hand-upload path: make a `timer` folder in the
-web root of 13.duckandrabbit.co, upload `install.php`, visit it, and click
-Install. It writes the pull key to `config.php` and never prints it; read it
-from `config.php` in the IONOS file manager. Once `.git` and `config.php` are
-present, `install.php` returns 410. Delete it when the hand install finishes. Pulls restore
-the file from git; the restored copy stays off once the app is installed.
+The pull key lives in ONE server-only file that returns an array: `timer-secrets.php`
+two folders above this one (preferred), or `config.php` here. Copy `config.example.php`
+to make it. Both are gitignored, and the in-folder copy answers 404 if requested.
 
-The other path is dealdash's `install-timer.php`, which checks this folder out
-on the server. Use that instead of `install.php` when dealdash does the install.
+`install.php` is only for the hand-upload path: make a `timer` folder in the web root of
+13.duckandrabbit.co, create the config file with a `pull_key`, upload `install.php` and
+`deploy-gate.php`, visit `install.php`, type the key and click Install. With no config it
+refuses to run. Once `.git` and the config are present it returns 410. Delete it when the
+hand install finishes; pulls restore the file from git, and the restored copy stays off.
 
-After that: push to `main` here, then hit `pull.php?key=...`, or use the
-Update from GitHub button on the page.
+The other path is dealdash's `install-timer.php`, which checks this folder out on the
+server. Use that instead of `install.php` when dealdash does the install.
 
-`config.php` holds the pull key and is gitignored — it only exists on the server.
+After that: push to `main` here, then use the Update from GitHub button on the page, or
+`curl -s -X POST -H "X-Deploy-Key: $PULL_KEY" https://13.duckandrabbit.co/timer/pull.php`.
+The key is never accepted in the URL. Five bad keys from one IP in 15 minutes lock it out
+for 15 minutes, and updates run at most every 20 seconds.
+
+`.htaccess` is server-only too, so `git reset --hard` never overwrites it. The tracked
+template is `htaccess.dist`; `pull.php` and `install.php` install it when `.htaccess` is
+missing. `pull.php` refuses a commit that tracks `config.php`, `.htaccess` or a secrets
+file, or that puts PHP in a data, upload or cache folder.

@@ -1,1 +1,19 @@
+# Server-only: never commit
 config.php
+*-config.php
+*-secrets.php
+.htaccess
+.htaccess.new
+.env
+.env.*
+*.key
+*.pem
+
+# Backups, dumps, archives, logs
+backups/
+backup*/
+*.sql
+*.bak
+*.zip
+*.log
+/data/
